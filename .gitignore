@@ -1,0 +1,12 @@
+*.pdf
+
+# virtual environment
+venv/
+
+# python
+__pycache__
+.ipynb_checkpoints/
+
+# VS code
+.vscode/
+
