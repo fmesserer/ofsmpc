@@ -89,10 +89,17 @@ class solverOutputFeedbackSMPC:
         beta_x_all  = ca.SX.sym('beta_x_all' , self.n_hx , N    ) 
         beta_xN_all = ca.SX.sym('beta_xN_all', self.n_hxN, 1    ) 
         beta = ca.veccat(beta_u_all, beta_x_all, beta_xN_all)
-        decvar = ca.veccat(traj_nom, S, traj_unc, beta)
 
-        lb_decvar = np.concatenate((-np.inf * np.ones( traj_nom.shape[0]), self.lbs * np.ones(S.shape[0]), -np.inf * np.ones( traj_unc.shape[0]), np.zeros(beta.shape[0])         ))
-        ub_decvar = np.concatenate(( np.inf * np.ones( traj_nom.shape[0]), self.ubs * np.ones(S.shape[0]),  np.inf * np.ones( traj_unc.shape[0]), np.inf * np.ones(beta.shape[0]) ))
+        # slacks for constraint violation penalty
+        S_hu = ca.SX.sym('S_hu', self.n_hu, N - 1)
+        S_hx = ca.SX.sym('S_hx', self.n_hx, N)
+        S_hxN = ca.SX.sym('S_hxN', self.n_hxN, 1)
+        S_constr = ca.veccat(S_hu, S_hx, S_hxN)
+
+        decvar = ca.veccat(traj_nom, S, traj_unc, beta, S_constr)
+
+        lb_decvar = np.concatenate((-np.inf * np.ones( traj_nom.shape[0]), self.lbs * np.ones(S.shape[0]), -np.inf * np.ones( traj_unc.shape[0]), np.zeros(beta.shape[0])        , np.zeros(S_constr.shape[0])  ))
+        ub_decvar = np.concatenate(( np.inf * np.ones( traj_nom.shape[0]), self.ubs * np.ones(S.shape[0]),  np.inf * np.ones( traj_unc.shape[0]), np.inf * np.ones(beta.shape[0]), np.inf * np.ones(S_constr.shape[0]) ))
 
         # timedep parameters
         Par_td = ca.SX.sym('Par_td', self.np, N+1)
@@ -115,6 +122,11 @@ class solverOutputFeedbackSMPC:
         Sigma_x = Sigma_[:nx,:nx]
         Sigma_x_vec = symmToVec(Sigma_x)
         obj += self.cost_terminal(Xbar[:,-1], Sigma_x_vec,  Sx[:,-1], SxN, Par_td[:,-1])
+
+        # push slacks down
+        obj += self.constr_u_pen * ca.sum1(ca.sum2(S_hu))
+        obj += self.constr_x_pen * ca.sum1(ca.sum2(S_hx))
+        obj += self.constr_x_pen * ca.sum1(S_hxN)
 
         # regularization K_fb
         obj += self.epsilon_K * ca.sumsqr(K_fb_vec_dec)
@@ -153,19 +165,30 @@ class solverOutputFeedbackSMPC:
             ubg.extend([np.inf] * self.n_hx * N)
             constr_x_std = ca.sqrt(self.epsilon_var + beta_x_all)
             constr_x_exv = expectation_over_relu(constr_x_mean, constr_x_std)
-            obj += ca.sum1(ca.sum2(self.constr_x_pen * constr_x_exv))
+
+            # slack for violation on expected constraint violation
+            g.append( ca.veccat( constr_x_exv  - S_hx ))
+            lbg.extend([-np.inf] * self.n_hx * N)
+            ubg.extend([0]       * self.n_hx * N) 
+
+            # slack for violation of nominal constraint (guiding constraint)
+            g.append( ca.veccat( constr_x_mean  - S_hx ))
+            lbg.extend([-np.inf] * self.n_hx * N)
+            ubg.extend([0]       * self.n_hx * N)
+
+            # S_hx >= 0 is handled by lb_decvar
 
         # control constraint
         if self.constr_contr:
             h_u_map = self.constr_contr.map(N)
             constr_u = h_u_map(Ubar, Su, Par_td[:,:-1])
 
-            # nominal constr
-            g.append(ca.reshape(constr_u, -1, 1))
-            lbg.extend([-ca.inf] * constr_u.shape[0] * constr_u.shape[1])
-            ubg.extend([0]       * constr_u.shape[0] * constr_u.shape[1])
+            # enforce constraint on first control input nominally
+            g.append( constr_u[:,0] )
+            lbg.extend([-ca.inf] * constr_u.shape[0] )
+            ubg.extend([0]       * constr_u.shape[0] )
 
-            # future constraints are enforced via soft constraint, expected value of penalty
+            # future constraints are enforced via expected value of penalty
             constr_u_mean = constr_u[:,1:]
 
             # fix slack to variance in constraint dir
@@ -176,8 +199,18 @@ class solverOutputFeedbackSMPC:
 
             constr_u_std = ca.sqrt(self.epsilon_var + beta_u_all)
             constr_u_exv = expectation_over_relu(constr_u_mean, constr_u_std)
-            obj += ca.sum1(ca.sum2(self.constr_u_pen * constr_u_exv))
 
+            # slack for violation on expected constraint violation
+            g.append( ca.veccat( constr_u_exv  - S_hu ))
+            lbg.extend([-np.inf] * self.n_hu * (N-1))
+            ubg.extend([0]       * self.n_hu * (N-1))
+
+            # slack for violation of nominal constraint (guiding constraint)
+            g.append( ca.veccat( constr_u_mean  - S_hu ))
+            lbg.extend([-np.inf] * self.n_hu * (N-1))
+            ubg.extend([0]       * self.n_hu * (N-1))
+
+            # S_hu >= 0 is handled by lb_decvar
 
         # terminal state constraints
         if self.constr_state_term:
@@ -191,8 +224,18 @@ class solverOutputFeedbackSMPC:
 
             constr_xN_std = ca.sqrt(self.epsilon_var + beta_xN_all)
             constr_xN_exv = expectation_over_relu(constr_xN_mean, constr_xN_std)
-            obj += ca.sum1(ca.sum2(self.constr_x_pen * constr_xN_exv))
+            
+            # slack for violation on expected constraint violation
+            g.append( constr_xN_exv - S_hxN )
+            lbg.extend([-np.inf] * self.n_hxN )
+            ubg.extend([0]       * self.n_hxN )
 
+            # slack for violation of nominal constraint (guiding constraint)
+            g.append( constr_xN_mean - S_hxN )
+            lbg.extend([-np.inf] * self.n_hxN )
+            ubg.extend([0]       * self.n_hxN )
+
+            # S_hxN >= 0 is handled by lb_decvar
 
         nlp = {}
         nlp['x'] = decvar
@@ -215,6 +258,7 @@ class solverOutputFeedbackSMPC:
         self.Su = Su
         self.SxN = SxN
         self.beta = beta
+        self.S_constr = S_constr
         self.Par_td = Par_td
         self.nlp_params = nlp_params
         self.lb_decvar = lb_decvar
@@ -224,7 +268,7 @@ class solverOutputFeedbackSMPC:
         self.defined_init_vals = False
 
 
-    def set_initial_guess_primal(self, X, U, Sx=None, Su=None, SxN=None, Sigma=None, K_fb=None, beta=None):
+    def set_initial_guess_primal(self, X, U, Sx=None, Su=None, SxN=None, Sigma=None, K_fb=None, beta=None, S_constr=None):
 
         init_guess_ = [X, U]
 
@@ -247,7 +291,7 @@ class solverOutputFeedbackSMPC:
             Sigma_0 = self.Sigma0_val
         if isinstance(Sigma, (int, float)):
             Sigma_0 = Sigma_0 * np.eye(2 * self.nx)
- 
+
         if Sigma_0 is not None:
             # get Sigma_all from forward simulation
             Sigma_0 = ca.evalf(symmToVec(Sigma_0)).full()
@@ -263,6 +307,12 @@ class solverOutputFeedbackSMPC:
         if isinstance(beta, (int, float)):
             beta = beta * np.zeros(self.beta.shape[0])
         init_guess_.append(beta)
+
+        if S_constr is None:
+            S_constr = 1
+        if isinstance(S_constr, (int, float)):
+            S_constr = S_constr * np.ones(self.S_constr.shape[0])
+        init_guess_.append(S_constr)
 
         self.init_guess = ca.veccat(*init_guess_)
 
@@ -337,19 +387,20 @@ class solverOutputFeedbackSMPC:
         Su_opt = ca.evalf(ca.substitute(self.Su, self.decvar, sol['x'])).full()
         SxN_opt = ca.evalf(ca.substitute(self.SxN, self.decvar, sol['x'])).full()
         beta_opt = ca.evalf(ca.substitute(self.beta, self.decvar, sol['x'])).full()
-        
+        S_constr_opt = ca.evalf(ca.substitute(self.S_constr, self.decvar, sol['x'])).full()
+
         self.Xbar_opt = X_opt
         self.Ubar_opt = U_opt
         self.Sigma_opt_vec = Sigma_opt_vec
         self.K_fb_opt_vec = K_fb_opt_vec
         self.K_ob_opt_vec = K_ob_opt_vec
+        self.beta_opt = beta_opt
 
         self.Sigma_opt = [ ca.evalf(vecToSymm(Sigma_opt_vec[:,i], 2*self.params["nx"])).full() for i in range(Sigma_opt_vec.shape[1]) ]
         self.Sigma_opt = [ (Sig + Sig.T) / 2 for Sig in self.Sigma_opt ]   # symmetrize
         self.K_fb_opt = [ ca.reshape(K_fb_opt_vec[:,i], self.nu, self.nx).full() for i in range(K_fb_opt_vec.shape[1]) ]
         self.K_ob_opt = [ ca.reshape(K_ob_opt_vec[:,i], self.nx, self.ny).full() for i in range(K_ob_opt_vec.shape[1]) ]
-        self.beta_opt = beta_opt
-        self.set_initial_guess_primal(X_opt, U_opt, Sx=Sx_opt, Su=Su_opt, SxN=SxN_opt, Sigma=Sigma_opt_vec, K_fb=K_fb_opt_vec[:,1:], beta=beta_opt)
+        self.set_initial_guess_primal(X_opt, U_opt, Sx=Sx_opt, Su=Su_opt, SxN=SxN_opt, Sigma=Sigma_opt_vec, K_fb=K_fb_opt_vec[:,1:], beta=beta_opt, S_constr=S_constr_opt)
         return self.solver.stats()['success']
 
 
