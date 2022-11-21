@@ -16,7 +16,7 @@ showplots = False
 gamma_conf = 3          # confidence level for ellipsoids representing normal distribution
 
 outfolder = 'robot_nl_results/'
-resfile = 'res_2022-11-18-10-53-23.npy'
+resfile = 'res_2022-11-21-17-14-34.npy'
 
 results_dict = np.load(outfolder + resfile, allow_pickle=True)
 results_dict = results_dict[()]

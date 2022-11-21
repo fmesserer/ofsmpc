@@ -195,7 +195,7 @@ def get_params():
     
     # regularization
     params["epsilon_K"]     = 1e-4
-    params["epsilon_beta"]  = 1e-4
+    params["epsilon_beta"]  = 0
     params["epsilon_var"]   = 1e-4
 
     # noise standard deviations

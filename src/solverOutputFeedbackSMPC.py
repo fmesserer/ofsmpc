@@ -91,7 +91,7 @@ class solverOutputFeedbackSMPC:
         beta = ca.veccat(beta_u_all, beta_x_all, beta_xN_all)
         decvar = ca.veccat(traj_nom, S, traj_unc, beta)
 
-        lb_decvar = np.concatenate((-np.inf * np.ones( traj_nom.shape[0]), self.lbs * np.ones(S.shape[0]), -np.inf * np.ones( traj_unc.shape[0]), np.zeros(beta.shape[0])         ))
+        lb_decvar = np.concatenate((-np.inf * np.ones( traj_nom.shape[0]), self.lbs * np.ones(S.shape[0]), -np.inf * np.ones( traj_unc.shape[0]), self.epsilon_var * np.ones(beta.shape[0])         ))
         ub_decvar = np.concatenate(( np.inf * np.ones( traj_nom.shape[0]), self.ubs * np.ones(S.shape[0]),  np.inf * np.ones( traj_unc.shape[0]), np.inf * np.ones(beta.shape[0]) ))
 
         # timedep parameters
@@ -151,7 +151,8 @@ class solverOutputFeedbackSMPC:
             g.append(ca.vec(constr_beta_x_var))
             lbg.extend([0] * self.n_hx * N)
             ubg.extend([np.inf] * self.n_hx * N)
-            constr_x_std = ca.sqrt(self.epsilon_var + beta_x_all)
+            
+            constr_x_std = ca.sqrt(beta_x_all)
             constr_x_exv = expectation_over_relu(constr_x_mean, constr_x_std)
             obj += ca.sum1(ca.sum2(self.constr_x_pen * constr_x_exv))
 
@@ -174,7 +175,7 @@ class solverOutputFeedbackSMPC:
             lbg.extend([0] * self.n_hu * (N-1))
             ubg.extend([np.inf] * self.n_hu * (N-1))
 
-            constr_u_std = ca.sqrt(self.epsilon_var + beta_u_all)
+            constr_u_std = ca.sqrt(beta_u_all)
             constr_u_exv = expectation_over_relu(constr_u_mean, constr_u_std)
             obj += ca.sum1(ca.sum2(self.constr_u_pen * constr_u_exv))
 
@@ -189,10 +190,9 @@ class solverOutputFeedbackSMPC:
             lbg.extend([0] * self.n_hxN )
             ubg.extend([np.inf] * self.n_hxN )
 
-            constr_xN_std = ca.sqrt(self.epsilon_var + beta_xN_all)
+            constr_xN_std = ca.sqrt(beta_xN_all)
             constr_xN_exv = expectation_over_relu(constr_xN_mean, constr_xN_std)
             obj += ca.sum1(ca.sum2(self.constr_x_pen * constr_xN_exv))
-
 
         nlp = {}
         nlp['x'] = decvar
