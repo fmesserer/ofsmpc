@@ -77,6 +77,7 @@ if run_nom:
     Xinit_unc = np.copy(Xopt_nom)
     Uinit_unc = np.copy(Uopt_nom)
 
+
 #%% open loop stochastic MPC solver, initial OCP
 if run_ol:
     solver_ol = solverOpenLoopSMPC(dyn_discr, cost_stage, cost_terminal, params, constr_contr=constr_contr, constr_state=constr_state)
@@ -134,7 +135,7 @@ for i in range(N_exp):
     if run_nom:
         X_true_nom, U_true_nom, X_hat_nom, P_hat_nom, return_msg = simulate_closed_loop(N_cl, solver_nom, get_dyn_discr(params), meas_func, EKFstep, params,  W=W_samp, V=V_samp,w0=w0_samp)
         results_dict["traj_closedloop"][-1] += [(X_true_nom, U_true_nom, X_hat_nom, P_hat_nom, return_msg)]
-        solver_nom.set_initial_guess_primal( Xinit, Uinit)      # re
+        solver_nom.set_initial_guess_primal( Xinit, Uinit)      # reset initial guess for next experiment
 
     #%% open loop stochastic
     if run_ol:
