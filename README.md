@@ -2,7 +2,7 @@
 
 This repository documents the code (Python) used for the numerical illustration in the paper
 
-Florian Messerer, Katrin Baumgärtner, Moritz Diehl. A Dual-control effect preserving formulation for nonlinear output-feedback stochastic model predictive control with constraints. https://arxiv.org/abs/2209.07973, 2022.
+> Florian Messerer, Katrin Baumgärtner, Moritz Diehl. A Dual-control effect preserving formulation for nonlinear output-feedback stochastic model predictive control with constraints. https://arxiv.org/abs/2209.07973, 2022.
 
 ## Overview
 
