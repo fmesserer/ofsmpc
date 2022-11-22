@@ -275,12 +275,13 @@ def plotMPCSuccessRatio(traj_list, params, constr_state):
             b += [r[0]]
             print('{:14s}, {:19s}: {}'.format(controllers[idx], r[1], r[0]))
 
+
     bars = np.array(bars)
     legend = [ r[1] for r in ratios]
     
     plt.bar( controllers, bars[0,:], width=.25, label=legend[0])
     plt.bar( controllers, bars[1,:], width=.25, bottom = np.sum(bars[:1,:], axis=0), label=legend[1])
-    plt.xlim(-.5, 2.5)
+    plt.xlim(-.5, len(controllers) - .5)
     plt.legend(legend, bbox_to_anchor=(.5, 1.02), loc='lower center', ncol=len(legend), columnspacing=0.7, handletextpad=0.4 )
     plt.ylabel('ratio')
 
